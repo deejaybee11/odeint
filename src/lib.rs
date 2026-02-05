@@ -1,6 +1,6 @@
-mod system;
-mod solver;
-mod rk45;
+pub mod system;
+pub mod solver;
+pub mod rk45;
 
 pub fn add(left: u64, right: u64) -> u64 {
     left + right
