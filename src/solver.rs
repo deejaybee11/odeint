@@ -2,66 +2,123 @@ use ndarray::{ArrayD, Array2, Array1, arr1, arr2,Axis};
 use num_complex::Complex64;
 use std::f64;
 use thiserror::Error;
+use std::sync::Arc;
 
 pub type RhsFunction = Arc<dyn for<'a> Fn(f64, &'a Array1<f64>) -> Array1<f64>>;
 
-
-
-pub struct Solver<> {
-
-        f: RhsFunction,
-        t: f64,
-        t_old: f64,
-        t_max: f64,
-        dt: f64,
-        y: Array1<f64>,
-        rtol: f64,
-        atol: f64,
-        results: SolverResult<Array1<f64>, f64>,
-        h: f64,
-        h_old: f64,
-        n_max_steps: usize,
-        stats: SolverStats
+pub trait Stepper {
+    fn step(& mut self, y: Array1<f64>, t: f64, h: f64, f: RhsFunction, rtol: f64) -> (Array1<f64>, f64);
+    fn optimal_step_size(&self, h: f64, h_max: f64, rtol: f64, err: f64) -> f64;
 }
 
-impl Solver {
-    pub fn new(
+pub struct Solver<M: Stepper> {
+
         f: RhsFunction,
         t: f64,
+        t_start: f64,
+        method: M,
         t_old: f64,
         t_max: f64,
-        dt: f64,
         y: Array1<f64>,
         rtol: f64,
         atol: f64,
-        results: SolverResult<Array1<f64>, f64>,
+        pub results: SolverResult<Array1<f64>, f64>,
         h: f64,
         h_old: f64,
+        h_max: f64,
         n_max_steps: usize,
         stats: SolverStats,
+        status: u32,
+        nfev: u32,
+        njev: u32,
+        nlu: u32,
+}
+
+impl<M: Stepper> Solver<M> {
+    pub fn new(
+        f: RhsFunction,
+        method: M,
+        t_start: f64,
+        t_max: f64,
+        y: Array1<f64>,
+        rtol: f64,
+        atol: f64,
+        h: f64,
+        h_max: f64,
+        n_max_steps: usize,
     ) -> Self {
-        Solver {
-            t: t,
-            t_old: t_old,
-            tmax: t_max,
-            y: y,
+        Self {
+            f,
+            method,
+
+            t: t_start,
+            t_old: t_start,
+            t_start,
+            t_max,
+
+            y,
+
+            rtol,
+            atol,
+
+            h,
+            h_old: h,
+            h_max,
+
+            n_max_steps,
+
+            stats: SolverStats::new(),
+            status: 0,
+            results: SolverResult::default(),
             nfev: 0,
             njev: 0,
             nlu: 0,
-            status: 0,
-            f,
-            results: SolverResult::default(),
-            stats: SolverStats::new(),
         }
     }
 
-    pub fn solve(&mut self) -> SolverResult<Array1<f64>, f64> {
+    pub fn step(&mut self) {
+        
+        let mut accept_step = false;
+        let mut nsteps = 0;
+        let mut h_opt= self.h.clone();
+        let mut y_next=self.y.clone();
+        let mut err;
+        while !accept_step {
+            if nsteps > self.n_max_steps {
+               accept_step = true;
+               //println!("Maximum number of steps exceeded");
+            }
+            (y_next, err) = self.method.step(
+                self.y.clone(),
+                self.t,
+                self.h,
+                self.f.clone(),
+                self.rtol,
+            );
+            if err > self.atol {
+                h_opt = self.method.optimal_step_size(self.h, self.h_max, self.rtol, err);
+                self.h = h_opt;
+            }
+            else {
+                accept_step = true;
+            }      
+        }
+        self.h = h_opt;
+        self.t += self.h;
+        self.y = y_next.clone();
+        //print!("t: {}, y: {}, h: {}\n", self.t, self.y, self.h)
+    }
+
+    pub fn solve(&mut self){
         let mut y_next=self.y.clone();
         let mut h_opt;
         let mut err;
+        let mut step_success = false;
         while self.t < self.t_max {
-            for i in 0..self.n_max_steps {
-                (y_next, err) = solver.step(
+
+            step_success = false;
+            while !step_success {
+                (y_next, err) = self.method.step(
                     y_next.clone(),
                     self.t,
                     self.h,
@@ -70,20 +127,18 @@ impl Solver {
                 );
                 
                 if err > self.atol  {
-                    h_opt = solver.optimal_step_size(self.h, err);
+                    h_opt = self.method.optimal_step_size(self.h, self.h_max, self.rtol, err);
                     self.h = h_opt;
-                    break; 
                 }
                 else {
-                    self.h = h_opt;
+                    step_success = true;
                 }
             }
             self.t += self.h;
             self.y = y_next.clone();
             self.results.push(self.y.clone(), self.t);
-            print!("t: {}, y: {}, h: {}\n", self.t, self.y, self.h);
+            //print!("t: {}, y: {}, h: {}\n", self.t, self.y, self.h);
         }
-        self.results.clone()
     }
 }
 

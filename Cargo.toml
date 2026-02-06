@@ -7,3 +7,13 @@ edition = "2024"
 ndarray = "0.17.2"
 num-complex = "0.4.6"
 thiserror = "2.0.18"
+
+[profile.dev]
+opt-level = 0
+debug = 2
+split-debuginfo = "unpacked"
+
+[profile.release]
+opt-level = 3
+debug = true
+split-debuginfo = "unpacked"

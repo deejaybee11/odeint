@@ -1,6 +1,6 @@
 use ndarray::Array1;
-use odeint::dop54::{DOP54, RhsFunction};
-use odeint::solver::{SolverStats,SolverResult};
+use odeint::dop54::{DOP54};
+use odeint::solver::{SolverStats,SolverResult,RhsFunction, Stepper, Solver};
 use std::sync::Arc;
 
 
@@ -15,19 +15,23 @@ fn example_exponential_decay() {
     });
     
     let y0 = Array1::from_vec(vec![100.0]);
-
-    let mut solver = DOP54::new(
-        fun.clone(),
-        0.0,
-        y0,
-        10.0,
-        0.1,
-        1e-6,
-        1e-6,
-        20,
+    let method = DOP54::new(y0.clone());
+    let mut solver = Solver::new(
+        fun,
+        method,
+        0.0, // t_start
+        10.0, // t_max
+        y0, // initial condition
+        1e-6, // rtol
+        1e-6, // atol
+        0.1, // initial step size
+        0.1, // max step size
+        1000, // max steps
     );
 
-    let result = solver.solve();
+    println!("Full solve");
+    solver.solve();
+    println!("Results: {:?}", solver.results);
 }
 
 fn main() {
